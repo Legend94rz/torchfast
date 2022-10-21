@@ -1,0 +1,9 @@
+/.idea/
+/*.egg-info/
+/build/
+/dist/
+/.vscode/
+.mypy_cache/
+__pycache__/
+.ipynb_checkpoints/
+*.pt
