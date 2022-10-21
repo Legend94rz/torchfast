@@ -1,5 +1,6 @@
 # Fast Torch
 
+![build](https://github.com/Legend94rz/torchfast/actions/workflows/build.yml/badge.svg)
 [![PyPI version](https://badge.fury.io/py/torchfast.svg)](https://badge.fury.io/py/torchfast)
 
 A keras-like library for pytorch.

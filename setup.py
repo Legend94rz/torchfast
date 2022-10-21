@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='Torchfast',
-    version='1.1.1',
+    version='1.1.2',
     author="Legend",
     description="A keras-like library for pytorch.",
     packages=find_packages(),
