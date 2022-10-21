@@ -1,5 +1,7 @@
 # Fast Torch
 
+[![PyPI version](https://badge.fury.io/py/torchfast.svg)](https://badge.fury.io/py/torchfast)
+
 A keras-like library for pytorch.
 Easy to use and more efficient.
 In most cases, the only thing you need to do is to define a `nn.Module`,
