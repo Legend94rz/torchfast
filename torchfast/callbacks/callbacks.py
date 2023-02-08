@@ -296,7 +296,7 @@ class EarlyStopping(BaseCallback):
 class ModelCheckpoint(BaseCallback):
     """Save the model after every epoch.
     `filepath` can contain named formatting options,
-    which will be filled the value of `epoch` and
+    which will be filled with the value of `epoch` and
     keys in `logs` (passed in `on_epoch_end`).
     For example: if `filepath` is `weights.{epoch:02d}-{val_loss:.2f}.hdf5`,
     then the model checkpoints will be saved with the epoch number and
@@ -315,6 +315,7 @@ class ModelCheckpoint(BaseCallback):
 
     def __init__(self, filepath: str, monitor='val_loss', verbose=False, save_best_only=True, mode='min', period=1):
         super(ModelCheckpoint, self).__init__()
+        assert isinstance(filepath, str), '`filepath` should be a str instance.'
         self.monitor = monitor
         self.verbose = verbose
         self.filepath = filepath

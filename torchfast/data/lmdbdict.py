@@ -105,6 +105,10 @@ class LmdbDict:
         if v:
             return pkl.loads(v)
         raise IndexError(f"There is no the key: {k}")
+
+    @_with_transaction
+    def __contains__(self, k: Any, txt) -> bool:
+        return txt.get(pkl.dumps(k)) is not None
     
     @_with_transaction
     def __setitem__(self, k: Any, v: Any, txn) -> None:

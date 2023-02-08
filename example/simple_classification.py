@@ -1,6 +1,8 @@
-from torchfast import *
+from torchfast import Learner, AdaBelief, BinaryAccuracyWithLogits, F1Score, TensorBoard, GradClipper, LambdaLayer, BinaryLabelSmoothLoss, EarlyStopping, ReduceLROnPlateau, TorchProfile
 import numpy as np
-from sklearn.metrics import f1_score
+from torch import nn
+import torch as T
+from torch.nn import functional as F
 
 
 class SimpleMLP(nn.Module):

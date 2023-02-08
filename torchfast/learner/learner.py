@@ -49,10 +49,27 @@ def _std_loss(loss_fn):
     return nloss, loss_fn
 
 
-def _std_device(device):
+def _std_device(device) -> str:
     if device is None:
         device = 'cuda' if T.cuda.is_available() else 'cpu'
     return device
+
+
+def _std_kwargs(kwargs):
+    internel_args = {}
+    dl_args = {}  # passed to `DataLoader` (or `TensorDataloader` if possible)
+    unknown_args = {}
+    internel_args['prefer_tensorloader'] = kwargs.pop('prefer_tensorloader', True)
+    for k, v in kwargs.items():
+        if k not in ('self', 'kwargs', 'batch_size'):
+            if k in isp.signature(DataLoader.__init__).parameters:
+                dl_args[k] = v
+            else:
+                unknown_args[k] = v
+    if unknown_args:
+        msg = ', '.join([x for x in unknown_args])
+        warn(f"Unknown kwargs: {msg}")
+    return internel_args, dl_args, unknown_args
 
 
 class Learner:
@@ -69,8 +86,8 @@ class Learner:
                 import os
                 local_rank = int(os.environ['LOCAL_RANK'])
                 T.cuda.set_device(local_rank)
-                seed_everything(seed)
                 distributed.init_process_group(backend='nccl')
+                seed_everything(seed)
                 cls.__LOCAL_RANK = local_rank
             return cls.__LOCAL_RANK
         else:
@@ -89,16 +106,12 @@ class Learner:
         return dataset
 
     @classmethod
-    def _make_dataloader(cls, dataset, batch_size, **kwargs) -> Union[DataLoader, TensorDataLoader]:
+    def _make_dataloader(cls, dataset, batch_size, prefer_tensorloader=True, inference=False, **dl_kwargs) -> Union[DataLoader, TensorDataLoader]:
         if isinstance(dataset, (DataLoader, TensorDataLoader)):
             return dataset
-        prefer_tensorloader = kwargs.get('prefer_tensorloader', True)
         tdl_init_params = isp.signature(TensorDataLoader.__init__).parameters
-        dl_init_params = isp.signature(DataLoader.__init__).parameters
-        if prefer_tensorloader and all(k in tdl_init_params or k not in dl_init_params for k in kwargs if
-                                       k not in ('self', 'kwargs', 'batch_size')):
-            dl_kwargs = {k: v for k, v in kwargs.items() if
-                         k not in ('self', 'kwargs', 'batch_size') and k in tdl_init_params}
+        if prefer_tensorloader and all(k in tdl_init_params for k in dl_kwargs):
+            dl_kwargs = {k: v for k, v in dl_kwargs.items()}
             if isinstance(dataset, (np.ndarray, T.Tensor)):
                 return TensorDataLoader(dataset, batch_size=batch_size, **dl_kwargs)
             elif isinstance(dataset, Iterable):
@@ -106,9 +119,7 @@ class Learner:
             else:
                 pass
         dataset = cls._make_dataset(dataset)
-        dl_kwargs = {k: v for k, v in kwargs.items() if
-                     k not in ('self', 'kwargs', 'batch_size') and k in dl_init_params}
-        if cls.__LOCAL_RANK is not None and '__INFERENCE__' not in kwargs:
+        if cls.__LOCAL_RANK is not None and not inference:
             if 'sampler' not in dl_kwargs:
                 dl_kwargs['sampler'] = DistributedSampler(dataset)
             else:
@@ -147,6 +158,7 @@ class Learner:
         self.optimizer_fn = optimizer_fn
         self.loss_fn = loss_fn
         self.amp = amp
+        self._amp_enable = None
         self.stop_training = False
         self.train_ld = self.val_ld = None
         self.nloss = None
@@ -157,7 +169,7 @@ class Learner:
         self.scaler = None
 
     def _iter_one_batch(self, stage, batch, metrics, callbacks, return_output=False):
-        with torchamp.autocast(enabled=self.amp):
+        with torchamp.autocast(enabled=self._amp_enable):
             res = self.compute_forward(batch, stage)
             if not isinstance(res, tuple):
                 res = (res,)
@@ -294,8 +306,6 @@ class Learner:
             module_ = T.nn.SyncBatchNorm.convert_sync_batchnorm(self.module)
             self.module = DistributedDataParallel(module_.to('cuda'), device_ids=[self.__LOCAL_RANK])
 
-        # 可能有一些内部变量需要在每次fit前初始化。
-        self.scaler = torchamp.GradScaler(enabled=self.amp)
         # std optimizer
         if callable(self.optimizer_fn):
             self.opt = self.optimizer_fn(self.module.parameters())  # other parameters could be passed by `partial`
@@ -306,18 +316,23 @@ class Learner:
         metrics = _std_metrics(metrics)
         self.nloss, self.loss_fn = _std_loss(self.loss_fn)
         device = _std_device(device)
+        # 可能有一些内部变量需要在每次fit前初始化。
+        self._amp_enable = self.amp and device != 'cpu'
+        self.scaler = torchamp.GradScaler(enabled=self._amp_enable)
 
         self.val_ld = None
+        internel_args, dl_args, _ = _std_kwargs(kwargs)
+        prefer_tensorloader = internel_args['prefer_tensorloader']
         if dataset_split is not None:
             # 如果先检查 validation_set 的话，validation_set为空时，有两种情况：
             # 一种是真的没有验证集，另一种是再看dataset_split。两种情况下对training_set的处理不完全一样（还需要看是否直接转成TensorDataLoader）
             x, y = dataset_split
             assert type(x) == type(y)
             if isinstance(x, Sequence):
-                kwargs['sampler'] = SubsetRandomSampler(x)
-                self.train_ld = self._make_dataloader(training_set, batch_size, **kwargs)
-                kwargs['sampler'] = SubsetSequentialSampler(y)
-                self.val_ld = self._make_dataloader(training_set, batch_size, **kwargs)
+                dl_args['sampler'] = SubsetRandomSampler(x)
+                self.train_ld = self._make_dataloader(training_set, batch_size, prefer_tensorloader, **dl_args)
+                dl_args['sampler'] = SubsetSequentialSampler(y)
+                self.val_ld = self._make_dataloader(training_set, batch_size, prefer_tensorloader, **dl_args)
             else:
                 ds = self._make_dataset(training_set)
                 assert isinstance(x, float) or isinstance(x, int)
@@ -325,14 +340,14 @@ class Learner:
                     x = int(len(ds) * x)
                     y = len(ds) - x
                 train_ds, val_ds = random_split(ds, [x, y])
-                self.train_ld = self._make_dataloader(train_ds, batch_size, **kwargs)
-                self.val_ld = self._make_dataloader(val_ds, batch_size, **kwargs)
+                self.train_ld = self._make_dataloader(train_ds, batch_size, prefer_tensorloader, **dl_args)
+                self.val_ld = self._make_dataloader(val_ds, batch_size, prefer_tensorloader, **dl_args)
         else:
             # 只有当kwargs不包含TensorDataloader构造函数参数之外的参数、相应的validation_set/training_set是ndarray/tensor、prefer_tensordataloader=True时，
             # 才会尝试构造TensorDataloader。
-            self.train_ld = self._make_dataloader(training_set, batch_size, **kwargs)
+            self.train_ld = self._make_dataloader(training_set, batch_size, prefer_tensorloader, **dl_args)
             if validation_set is not None:
-                self.val_ld = self._make_dataloader(validation_set, batch_size, **kwargs)
+                self.val_ld = self._make_dataloader(validation_set, batch_size, prefer_tensorloader, **dl_args)
 
         self.module.to(device)
         self.stop_training = False
@@ -359,9 +374,9 @@ class Learner:
     def predict(self, X: Union[np.ndarray, T.Tensor, Dataset, DataLoader, TensorDataLoader, List, Tuple],
                 batch_size: Optional[int] = 128,
                 device: Union[str, T.device] = None, verbose: bool = True, **kwargs):
-        kwargs = kwargs.copy()
-        kwargs['__INFERENCE__'] = True
-        dl = self._make_dataloader(X, batch_size, **kwargs)
+        internel_args, dl_args, _ = _std_kwargs(kwargs)
+        dl = self._make_dataloader(X, batch_size, internel_args['prefer_tensorloader'], inference=True, **dl_args)
+        self._amp_enable = self.amp and device != 'cpu'
         output = []
         module = self.module
         module.eval()
@@ -391,10 +406,11 @@ class Learner:
             require_output: 某些情况下输出可能非常大，此时保存在内存中会导致内存逐渐明显增长，甚至OOM；或者仅关心metrics时 可置为False。
         """
         # todo: 如果self.module是个ddp怎么办？
-        kwargs = kwargs.copy()
-        kwargs['__INFERENCE__'] = True
-
-        dl = self._make_dataloader(X, batch_size, **kwargs)
+        #kwargs = kwargs.copy()
+        #kwargs['__INFERENCE__'] = True
+        internel_args, dl_args, _ = _std_kwargs(kwargs)
+        dl = self._make_dataloader(X, batch_size, internel_args['prefer_tensorloader'], inference=True, **dl_args)
+        self._amp_enable = self.amp and device != 'cpu'
         metrics = _std_metrics(metrics)
         self.nloss, self.loss_fn = _std_loss(self.loss_fn)
         device = _std_device(device)

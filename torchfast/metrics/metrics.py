@@ -100,7 +100,7 @@ class MeanAbsoluteError(AverageMeter):
 
 
 class _ConfusionMatrixBased(BaseMeter):
-    def __init__(self, threshold=.0, average='macro'):
+    def __init__(self, threshold=.0, average: Optional[str] = 'macro'):
         """
         目前只支持average in {'macro', 'micro', None}。用于二分类、多分类或多标记下的f1计算。
 
@@ -126,11 +126,11 @@ class _ConfusionMatrixBased(BaseMeter):
         # multi-class: input: [N, c], target: [N, ]
         if not (input.ndim - 1 == target.ndim or input.ndim == target.ndim):
             raise RuntimeError(f"The ndim is mismatch of input: {input.ndim} and target: {target.ndim}.")
-        if input.ndim != target.ndim:
+        if input.ndim != target.ndim: # multi-class
             labels = list(range(input.shape[-1]))
             pred = input.argmax(-1).cpu().numpy().astype('int')
-        else:
-            labels = None
+        else:  # binary/multi-label
+            labels = [0, 1]
             pred = (input > self.threshold).cpu().numpy().astype('int')
         mcm = T.tensor(multilabel_confusion_matrix(target.cpu().numpy().astype('int'), pred, labels=labels),
                        device=self.confusion_mat.device)
