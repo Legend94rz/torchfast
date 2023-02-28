@@ -4,6 +4,7 @@ from . import functional as F
 from ..misc.misc import all_reduce_mean, distributed
 from sklearn.metrics import multilabel_confusion_matrix
 from typing import Optional
+import numpy as np
 
 
 # 替换现有传入fit中的metrics参数为:[(0, 'acc', BinaryAccuracy())]。原有写法现在会自动转化为LambdaAverageMeter。Meter构造函数尽量不要有参数，保持简洁。
@@ -132,9 +133,9 @@ class _ConfusionMatrixBased(BaseMeter):
         else:  # binary/multi-label
             labels = [0, 1]
             pred = (input > self.threshold).cpu().numpy().astype('int')
-        mcm = T.tensor(multilabel_confusion_matrix(target.cpu().numpy().astype('int'), pred, labels=labels),
+        mcm = T.tensor(np.ascontiguousarray(multilabel_confusion_matrix(target.cpu().numpy().astype('int'), pred, labels=labels)),
                        device=self.confusion_mat.device)
-        self.confusion_mat = self.confusion_mat + mcm
+        self.confusion_mat = (self.confusion_mat + mcm).contiguous()
         return self.value
 
     def sync(self):

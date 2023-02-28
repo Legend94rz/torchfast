@@ -137,6 +137,8 @@ class Learner:
             batch = [batch.to(device, non_blocking=True)]
         elif isinstance(batch, np.ndarray):
             batch = [T.tensor(batch, device=device)]
+        elif isinstance(batch, dict):
+            batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
         else:
             raise NotImplementedError
         return batch
@@ -150,8 +152,6 @@ class Learner:
                 labels respectively. Besides, `len(loss_fn)` must equal to the number of the module output. and the
                 final loss is simply summed. If `loss_fn` is None, you must override `compute_losses` function for
                 training.
-        :param swa: whether support stochastic weight averaging. If set True, `module` cannot be a `AveragedModel` instance, TorchFast will wrapper that for you.
-        :param avg_fn: will pass to `AveragedModel`. ignored if `swa` is False.
         :param amp: whether to enable Automatic Mixed Precision. if set `True`, the learner should use cuda devices.
         """
         self.module = module

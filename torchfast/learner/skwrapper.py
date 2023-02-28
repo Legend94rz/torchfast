@@ -39,11 +39,11 @@ class _SKWrapperBase(BaseEstimator):
         self.learner_ = getattr(self, 'learner_', None) if self.warm_start else None
         if self.learner_ is None:
             module = self.module_cls(**get_module_params(self.module_cls, self._kwargs))
-            self.learner_: Learner = self.learner_cls(module, self.optimizer_fn, self.loss_fn, self.swa, self.avg_fn, self.amp)
+            self.learner_: Learner = self.learner_cls(module, self.optimizer_fn, self.loss_fn, self.amp)
 
     def __init__(self, module_cls: Optional[type] = None, optimizer_fn: Optional[Union[Callable, T.optim.Optimizer]] = None,
                  loss_fn: Optional[Union[Callable, nn.Module]] = None, warm_start: bool = False,
-                 swa=False, avg_fn=None, amp=False,
+                 amp=False,
                  epochs: int = 10, batch_size: Optional[int] = 128, metrics: Optional[List[Tuple[int, str, Callable]]] = None,
                  validation_fraction: float = 0.1, random_state: Optional[float] = None,
                  callbacks: Optional[Union[List[BaseCallback], CallbackList]] = None,
@@ -54,8 +54,6 @@ class _SKWrapperBase(BaseEstimator):
         self.optimizer_fn = optimizer_fn
         self.loss_fn = loss_fn
         self.warm_start = warm_start
-        self.swa = swa
-        self.avg_fn = avg_fn
         self.amp = amp
         self.epochs = epochs
         self.batch_size = batch_size

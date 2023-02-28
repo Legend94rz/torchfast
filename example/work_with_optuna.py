@@ -4,9 +4,9 @@ import torch as T
 from sklearn.model_selection import cross_validate, GridSearchCV
 from sklearn.metrics import accuracy_score
 from sklearn.datasets import load_iris
-from torchfast import NNRegressor, NNClassifier, SparseCategoricalAccuracy
+from torchfast import NNRegressor, NNClassifier, SparseCategoricalAccuracy, Learner
 import optuna
-from functools import partial
+from functools import partial, wraps
 
 
 class MLP(nn.Module):
@@ -18,6 +18,17 @@ class MLP(nn.Module):
         return self.m(x)
 
 
+def distributed_objective(func):
+    @wraps
+    def wrapper(trial, *args, **kwargs):
+        if Learner.under_distributed():
+            return func(optuna.integration.TorchDistributedTrial(trial), *args, **kwargs)
+        else:
+            return func(trial, *args, **kwargs)
+    return wrapper
+
+
+#@distributed_objective
 def train(cfg, X, y, cv=True):
     h = cfg.suggest_int('hidden', 3, 13)
     clf = NNClassifier(MLP, T.optim.Adam, T.nn.CrossEntropyLoss(), batch_size=2, metrics=[(0, 'acc', SparseCategoricalAccuracy())], epochs=10, device='cpu', hidden=h)
