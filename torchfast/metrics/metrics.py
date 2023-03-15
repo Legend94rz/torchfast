@@ -175,7 +175,7 @@ class Recall(_ConfusionMatrixBased):
         tp = mcm[:, 1, 1]
         fn = mcm[:, 1, 0]
         if average == 'macro':
-            score = tp / (tp + fn)
+            score = (tp / (tp + fn)).mean()
         elif average == 'micro':
             score = tp.sum() / (tp.sum() + fn.sum())
         elif average is None:

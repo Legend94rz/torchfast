@@ -11,7 +11,6 @@ class SmartPool(mp.pool.Pool):
     """
     @classmethod
     def _map_proxy(cls, args):
-        print(args)
         func, *a = args
         return func(*a)
 

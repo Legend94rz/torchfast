@@ -81,9 +81,7 @@ class LmdbDict:
     
     @_with_transaction
     def keys(self, txn) -> List[Any]:
-        txn = self._txn or self.env.begin(write=False, db=self.db)
-        with txn:
-            return [pkl.loads(k) for k in txn.cursor().iternext(values=False)]
+        return [pkl.loads(k) for k in txn.cursor().iternext(values=False)]
 
     @_with_transaction
     def values(self, txn) -> List[Any]:
@@ -91,9 +89,7 @@ class LmdbDict:
 
     @_with_transaction
     def items(self, txn) -> List[Tuple[str, Any]]:
-        txn = self._txn or self.env.begin(write=False, db=self.db)
-        with txn:
-            return [(pkl.loads(k), pkl.loads(v)) for k, v in txn.cursor().iternext(values=True)]
+        return [(pkl.loads(k), pkl.loads(v)) for k, v in txn.cursor().iternext(values=True)]
 
     @_with_transaction
     def __len__(self, txn) -> int:
@@ -146,3 +142,6 @@ class LmdbDict:
 
     def close(self):
         self.env.close()
+        
+    def __del__(self):
+        self.close()

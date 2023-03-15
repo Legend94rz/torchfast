@@ -19,7 +19,7 @@ class MLP(nn.Module):
 
 
 def distributed_objective(func):
-    @wraps
+    @wraps(func)
     def wrapper(trial, *args, **kwargs):
         if Learner.under_distributed():
             return func(optuna.integration.TorchDistributedTrial(trial), *args, **kwargs)
@@ -28,7 +28,7 @@ def distributed_objective(func):
     return wrapper
 
 
-#@distributed_objective
+@distributed_objective
 def train(cfg, X, y, cv=True):
     h = cfg.suggest_int('hidden', 3, 13)
     clf = NNClassifier(MLP, T.optim.Adam, T.nn.CrossEntropyLoss(), batch_size=2, metrics=[(0, 'acc', SparseCategoricalAccuracy())], epochs=10, device='cpu', hidden=h)
