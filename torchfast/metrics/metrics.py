@@ -101,22 +101,27 @@ class MeanAbsoluteError(AverageMeter):
 
 
 class _ConfusionMatrixBased(BaseMeter):
-    def __init__(self, threshold=.0, average: Optional[str] = 'macro'):
+    def __init__(self, threshold=.0, average: Optional[str] = 'macro', pos_label=1):
         """
-        目前只支持average in {'macro', 'micro', None}。用于二分类、多分类或多标记下的f1计算。
+        用于二分类、多分类或多标记下的precision/recall/f1计算。
 
         Args:
             threshold (int, optional): 二值化inputs的阈值。>threshold为1，否则为0，形状需要兼容inputs。Defaults to `0`.
-            average (str, optional): `macro`: 各个类分别计算f1，然后求平均。`micro`：统一计算tp/fp/fn，然后直接求f1. Defaults to 'macro'.
+            average (str, optional): {'micro', 'macro', 'binary'} or None.  Defaults to 'macro'.
+                - `macro`: 各个类分别计算f1，然后求平均
+                - `micro`: 统一计算tp/fp/fn，然后直接求f1. 
+                - `binary`: 仅计算由`pos_label`指定的类。
+            pos_label: 仅当`average=="binary"`时有效。
 
         Inputs:
             input: (n_sample) or (n_sample x n_label). float array. logits / prob
             targets: same as input. 0-1 array.
         """
         super().__init__()
-        assert average in {'macro', 'micro', None}
+        assert average in {'macro', 'micro', 'binary', None}
         self.average = average
         self.threshold = T.tensor(threshold)
+        self.pos_label = pos_label
 
     def reset(self):
         self.confusion_mat = T.zeros(1)
@@ -144,7 +149,7 @@ class _ConfusionMatrixBased(BaseMeter):
 
 class F1Score(_ConfusionMatrixBased):
     @classmethod
-    def f1(cls, mcm: T.Tensor, average: Optional[str]):
+    def f1(cls, mcm: T.Tensor, average: Optional[str], pos_label: int):
         tp = mcm[:, 1, 1]
         fp = mcm[:, 0, 1]
         fn = mcm[:, 1, 0]
@@ -156,6 +161,10 @@ class F1Score(_ConfusionMatrixBased):
             p = tp.sum() / (tp.sum() + fp.sum())
             r = tp.sum() / (tp.sum() + fn.sum())
             score = 2 * p * r / (p + r)
+        elif average == 'binary':
+            p = tp[pos_label] / (tp[pos_label] + fp[pos_label])
+            r = tp[pos_label] / (tp[pos_label] + fn[pos_label])
+            score = (2 * p * r / (p + r))
         elif average is None:
             p = tp / (tp + fp)
             r = tp / (tp + fn)
@@ -166,18 +175,20 @@ class F1Score(_ConfusionMatrixBased):
 
     @property
     def value(self):
-        return self.f1(self.confusion_mat, self.average)
+        return self.f1(self.confusion_mat, self.average, self.pos_label)
 
 
 class Recall(_ConfusionMatrixBased):
     @classmethod
-    def recall(cls, mcm: T.Tensor, average: Optional[str]):
+    def recall(cls, mcm: T.Tensor, average: Optional[str], pos_label: int):
         tp = mcm[:, 1, 1]
         fn = mcm[:, 1, 0]
         if average == 'macro':
             score = (tp / (tp + fn)).mean()
         elif average == 'micro':
             score = tp.sum() / (tp.sum() + fn.sum())
+        elif average == 'binary':
+            score = tp[pos_label] / (tp[pos_label] + fn[pos_label])
         elif average is None:
             score = tp / (tp + fn)
         else:
@@ -186,18 +197,20 @@ class Recall(_ConfusionMatrixBased):
 
     @property
     def value(self):
-        return self.recall(self.confusion_mat, self.average)
+        return self.recall(self.confusion_mat, self.average, self.pos_label)
 
 
 class Precision(_ConfusionMatrixBased):
     @classmethod
-    def precision(cls, mcm: T.Tensor, average: Optional[str]):
+    def precision(cls, mcm: T.Tensor, average: Optional[str], pos_label: int):
         tp = mcm[:, 1, 1]
         fp = mcm[:, 0, 1]
         if average == 'macro':
             score = (tp / (tp + fp)).mean()
         elif average == 'micro':
             score = tp.sum() / (tp.sum() + fp.sum())
+        elif average == 'binary':
+            score = tp[pos_label] / (tp[pos_label] + fp[pos_label])
         elif average is None:
             score = tp / (tp + fp)
         else:
@@ -206,7 +219,7 @@ class Precision(_ConfusionMatrixBased):
 
     @property
     def value(self):
-        return self.precision(self.confusion_mat, self.average)
+        return self.precision(self.confusion_mat, self.average, self.pos_label)
 
 
 class ROCAUC(BaseMeter):

@@ -60,11 +60,13 @@ class LmdbDict:
         self.kwargs = kwargs
     
     @_with_transaction
-    def clear(self, txn):
+    def clear(self, txn=None):
+        assert txn is not None
         txn.drop(db=self.db)
 
     @_with_transaction
-    def setdefault(self, key: Any, default: Any, txn) -> Any:
+    def setdefault(self, key: Any, default: Any, txn=None) -> Any:
+        assert txn is not None
         bk = pkl.dumps(key)
         v = txn.get(bk)
         if v is not None:
@@ -80,38 +82,41 @@ class LmdbDict:
                 self[k] = dct[k]
     
     @_with_transaction
-    def keys(self, txn) -> List[Any]:
+    def keys(self, txn=None) -> List[Any]:
+        assert txn is not None
         return [pkl.loads(k) for k in txn.cursor().iternext(values=False)]
 
     @_with_transaction
-    def values(self, txn) -> List[Any]:
+    def values(self, txn=None) -> List[Any]:
+        assert txn is not None
         return [pkl.loads(v) for k, v in txn.cursor().iternext(values=True)]
 
     @_with_transaction
-    def items(self, txn) -> List[Tuple[str, Any]]:
+    def items(self, txn=None) -> List[Tuple[str, Any]]:
+        assert txn is not None
         return [(pkl.loads(k), pkl.loads(v)) for k, v in txn.cursor().iternext(values=True)]
 
     @_with_transaction
-    def __len__(self, txn) -> int:
+    def __len__(self, txn=None) -> int:
+        assert txn is not None
         return txn.stat()['entries']
 
     @_with_transaction
-    def __getitem__(self, k: Any, txn) -> Any:
+    def __getitem__(self, k: Any, txn=None) -> Any:
+        assert txn is not None
         v = txn.get(pkl.dumps(k))
         if v:
             return pkl.loads(v)
         raise IndexError(f"There is no the key: {k}")
-
-    @_with_transaction
-    def __contains__(self, k: Any, txt) -> bool:
-        return txt.get(pkl.dumps(k)) is not None
     
     @_with_transaction
-    def __setitem__(self, k: Any, v: Any, txn) -> None:
+    def __setitem__(self, k: Any, v: Any, txn=None) -> None:
+        assert txn is not None
         txn.put(pkl.dumps(k), pkl.dumps(v))
         
     @_with_transaction
-    def __delitem__(self, k: Any, txn) -> None:
+    def __delitem__(self, k: Any, txn=None) -> None:
+        assert txn is not None
         txn.delete(pkl.dumps(k))
         
     def __iter__(self):
@@ -142,6 +147,3 @@ class LmdbDict:
 
     def close(self):
         self.env.close()
-        
-    def __del__(self):
-        self.close()

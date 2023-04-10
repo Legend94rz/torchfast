@@ -108,6 +108,8 @@ class Learner:
     @classmethod
     def _make_dataloader(cls, dataset, batch_size, prefer_tensorloader=True, inference=False, **dl_kwargs) -> Union[DataLoader, TensorDataLoader]:
         if isinstance(dataset, (DataLoader, TensorDataLoader)):
+            if cls.under_distributed() and not isinstance(dataset, DistributedSampler):
+                warn(f"The sampler of dataloader is not a `DistributedSampler`, which may be incorrect under distributed training. Consider using `ft.DistributedSamplerWrapper(sampler)`.")
             return dataset
         tdl_init_params = isp.signature(TensorDataLoader.__init__).parameters
         if prefer_tensorloader and all(k in tdl_init_params for k in dl_kwargs):
@@ -119,7 +121,7 @@ class Learner:
             else:
                 pass
         dataset = cls._make_dataset(dataset)
-        if cls.__LOCAL_RANK is not None and not inference:
+        if cls.under_distributed() and not inference:
             if 'sampler' not in dl_kwargs:
                 dl_kwargs['sampler'] = DistributedSampler(dataset)
             else:
