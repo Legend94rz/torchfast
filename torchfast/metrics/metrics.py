@@ -233,11 +233,12 @@ class ROCAUC(BaseMeter):
         area = 0.5 * (x[:, :num_thres - 1] - x[:, 1:]) * (y[:, :num_thres - 1] + y[:, 1:])
         return area.sum(1).mean()
 
-    def __init__(self, num_thresholds=200):
+    def __init__(self, input_logit=True, num_thresholds=200):
         """
         用于二分类或多标记下的ROC AUC计算。多标记下取各标记下的auc平均值，即macro方式。
 
         Args:
+            input_logit (bool, optional): 表示输入是logit还是概率. `False`时会先进行sigmoid.
             num_thresholds (int, optional): [0, 1]分成多少个区间. Defaults to 200.
 
         Inputs:
@@ -254,12 +255,16 @@ class ROCAUC(BaseMeter):
             ```
         """
         super().__init__()
+        self.input_logit = input_logit
         self.threshold = T.linspace(0, 1, num_thresholds + 1)
 
     def reset(self):
         self.confusion_mat = T.zeros(1)
+        return self
 
-    def __call__(self, input: T.tensor, target: T.tensor):
+    def __call__(self, input: T.Tensor, target: T.Tensor):
+        if self.input_logit:
+            input = input.sigmoid()
         mcmt = F.multilab_confusion_matrix_at_threshold(input, target, self.threshold)  # [tp, fp, fn, tn]
         self.confusion_mat = self.confusion_mat + mcmt
         return self.value

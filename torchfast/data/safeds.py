@@ -25,24 +25,21 @@ class let_it_safe:
                 raise IndexError()
             
             start = idx
-            it = None
-            re_read = True
+            ret = None
             if start not in self.next_cache:
-                re_read = False
                 while True:
                     try:
-                        it = self.origin_get_fn(slf, idx)
-                        if self.use_cache:
-                            self.next_cache[start] = idx
+                        ret = self.origin_get_fn(slf, idx)
                         break
                     except Exception as e:
                         idx += 1
                         if idx >= len(slf):
                             idx = 0
-            idx = self.next_cache[start]
-            if re_read:
-                return self.origin_get_fn(slf, idx)
-            return it
+                if self.use_cache:
+                    self.next_cache[start] = idx
+            else:
+                ret = self.origin_get_fn(slf, self.next_cache[start])
+            return ret
 
         cls.__getitem__ = safe_get
         return cls
