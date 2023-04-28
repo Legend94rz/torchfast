@@ -121,6 +121,7 @@ class _ConfusionMatrixBased(BaseMeter):
         assert average in {'macro', 'micro', 'binary', None}
         self.average = average
         self.threshold = T.tensor(threshold)
+        self.nan = T.tensor(T.nan)
         self.pos_label = pos_label
 
     def reset(self):
@@ -175,6 +176,8 @@ class F1Score(_ConfusionMatrixBased):
 
     @property
     def value(self):
+        if self.confusion_mat.ndim == 1:
+            return self.nan
         return self.f1(self.confusion_mat, self.average, self.pos_label)
 
 
@@ -197,6 +200,8 @@ class Recall(_ConfusionMatrixBased):
 
     @property
     def value(self):
+        if self.confusion_mat.ndim == 1:
+            return self.nan
         return self.recall(self.confusion_mat, self.average, self.pos_label)
 
 
@@ -219,6 +224,8 @@ class Precision(_ConfusionMatrixBased):
 
     @property
     def value(self):
+        if self.confusion_mat.ndim == 1:
+            return self.nan
         return self.precision(self.confusion_mat, self.average, self.pos_label)
 
 
@@ -256,6 +263,7 @@ class ROCAUC(BaseMeter):
         """
         super().__init__()
         self.input_logit = input_logit
+        self.nan = T.tensor(T.nan)
         self.threshold = T.linspace(0, 1, num_thresholds + 1)
 
     def reset(self):
@@ -274,4 +282,6 @@ class ROCAUC(BaseMeter):
 
     @property
     def value(self):
+        if self.confusion_mat.ndim == 1:
+            return self.nan
         return self.auc(self.confusion_mat)

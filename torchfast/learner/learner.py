@@ -211,20 +211,28 @@ class Learner:
             log_prefix = 'val_'
             T.set_grad_enabled(False)
         need_sync = (self.__LOCAL_RANK is not None)
+        try:
+            total_steps = len(dataloader)
+        except:
+            # 对于 IterableDataset, 可能无法获取长度，此时metric**不同步**
+            # total_steps=None 除禁用tqdm外，也会影响某些依赖总长度的回调函数，如`CosineAnnealingWarmRestarts`等，无法正常使用。
+            total_steps = None
+            need_sync = False
 
         running_loss = T.tensor(.0, device=device)
         if hasattr(dataloader, 'sampler') and isinstance(dataloader.sampler, DistributedSampler):
             dataloader.sampler.set_epoch(cur_epoch)
-        pbar = tqdm(enumerate(dataloader), total=len(dataloader), file=sys.stdout, disable=not verbose,
+        pbar = tqdm(enumerate(dataloader), total=total_steps, file=sys.stdout, disable=not verbose,
                     desc=f'Epoch [{cur_epoch}/{total_epochs}]', dynamic_ncols=True)
         # reset metic statistics
         for m in metrics:
             m[2].reset().to(device)
         batch, loss = None, None
         output = []
+        ret = {}
         for i, batch in pbar:
             batch = self._move_batch_to_device(batch, device)
-            callbacks.on_batch_begin(stage, cur_epoch, i, len(dataloader), batch, self.training_logging,
+            callbacks.on_batch_begin(stage, cur_epoch, i, total_steps, batch, self.training_logging,
                                      self.validation_logging)
             loss, res = self._iter_one_batch(stage, batch, metrics, callbacks, return_output)
             if res:
@@ -232,14 +240,14 @@ class Learner:
             running_loss = (running_loss * i + float(loss)) / (1 + i)
             # sync metric & loss, if ddp.
             # 只在最后一个 step 同步 metric.
-            if need_sync and i == len(dataloader) - 1:
+            if need_sync and i == total_steps - 1:  # type: ignore
                 all_reduce_mean(running_loss)
                 for m in metrics:
                     m[2].sync()
 
             ret = {log_prefix + k: v.value.cpu().numpy() for _, k, v in metrics}
             ret[f'{log_prefix}loss'] = float(running_loss)
-            callbacks.on_batch_end(stage, cur_epoch, i, len(dataloader), ret, self.training_logging,
+            callbacks.on_batch_end(stage, cur_epoch, i, total_steps, ret, self.training_logging,
                                    self.validation_logging)
             with np.printoptions(precision=5):
                 metrics_output = {k: f'{v:.5f}' if np.ndim(v) == 0 else f'{v}' for k, v in ret.items()}
@@ -286,7 +294,7 @@ class Learner:
                 Union[Tuple[float, float], Tuple[int, int], Tuple[Sequence[int], Sequence[int]]]] = None,
             validation_set: Optional[Union[List, Tuple, Dataset, DataLoader, TensorDataLoader]] = None,
             callbacks: Optional[Union[List[BaseCallback], CallbackList]] = None,
-            device: Union[int, str, T.device] = None, verbose: bool = True, **kwargs):
+            device: Optional[Union[int, str, T.device]] = None, verbose: bool = True, **kwargs):
         """
         :param training_set: (x1, x2, ..., y1, y2, ...), torch Dataset or DataLoader
         :param epochs: int.
@@ -320,7 +328,7 @@ class Learner:
         device = _std_device(device)
         # 可能有一些内部变量需要在每次fit前初始化。
         self._amp_enable = self.amp and device != 'cpu'
-        self.scaler = torchamp.GradScaler(enabled=self._amp_enable)
+        self.scaler = torchamp.GradScaler(enabled=self._amp_enable)  # type: ignore
 
         self.val_ld = None
         internel_args, dl_args, _ = _std_kwargs(kwargs)
@@ -375,7 +383,7 @@ class Learner:
 
     def predict(self, X: Union[np.ndarray, T.Tensor, Dataset, DataLoader, TensorDataLoader, List, Tuple],
                 batch_size: Optional[int] = 128,
-                device: Union[str, T.device] = None, verbose: bool = True, **kwargs):
+                device: Optional[Union[int, str, T.device]] = None, verbose: bool = True, **kwargs):
         internel_args, dl_args, _ = _std_kwargs(kwargs)
         dl = self._make_dataloader(X, batch_size, internel_args['prefer_tensorloader'], inference=True, **dl_args)
         self._amp_enable = self.amp and device != 'cpu'
@@ -403,7 +411,7 @@ class Learner:
                  batch_size: Optional[int] = 128,
                  metrics: Optional[List[Tuple[int, str, BaseMeter]]] = None,
                  callbacks: Optional[Union[List[BaseCallback], CallbackList]] = None,
-                 device: Union[str, T.device] = None, verbose: bool = True, **kwargs):
+                 device: Optional[Union[int, str, T.device]] = None, verbose: bool = True, **kwargs):
         """
             require_output: 某些情况下输出可能非常大，此时保存在内存中会导致内存逐渐明显增长，甚至OOM；或者仅关心metrics时 可置为False。
         """
