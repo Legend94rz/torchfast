@@ -63,8 +63,8 @@ class CosineAnnealingLR(BaseCallback):
         self.max_epoch = max_epoch
         self.sch = None
 
-    def on_train_begin(self, **kwargs):
-        super().on_train_begin(**kwargs)
+    def on_fit_begin(self, **kwargs):
+        super().on_fit_begin(**kwargs)
         self.sch = lr_scheduler.CosineAnnealingLR(kwargs['optimizer'], self.T_max, self.eta_min, self.last_epoch, self.verbose)
 
     def on_epoch_end(self, training_log, validation_log):

@@ -365,20 +365,26 @@ class Learner:
         self.validation_logging = []
         # 应避免循环引用。callbacks不能作为成员变量，否则当dataloader的num_workers>0、且启用ddp时会报CUDA init error，原因不明，像是pytorch的bug。
         callbacks.set_model(self)
-        callbacks.on_train_begin(optimizer=self.opt, local_rank=self.__LOCAL_RANK)
+        callbacks.on_fit_begin(optimizer=self.opt, local_rank=self.__LOCAL_RANK)
         for e in range(epochs):
             if self.stop_training:
                 break
             callbacks.on_epoch_begin(self.training_logging, self.validation_logging)
+            
+            callbacks.on_train_begin()
             running_mean, _ = self._walk_through_data(Stage.TRAIN, self.train_ld, e, epochs, metrics, callbacks, device,
                                                       verbose, False)
             self.training_logging.append({**{'epoch': e}, **running_mean})
+            callbacks.on_train_end()
             if self.val_ld is not None:
+                callbacks.on_val_begin()
                 running_mean, _ = self._walk_through_data(Stage.VALIDATION, self.val_ld, e, epochs, metrics, callbacks,
                                                           device, verbose, False)
                 self.validation_logging.append({**{'epoch': e}, **running_mean})
+                callbacks.on_val_end()
+            
             callbacks.on_epoch_end(self.training_logging, self.validation_logging)
-        callbacks.on_train_end(self.training_logging, self.validation_logging)
+        callbacks.on_fit_end(self.training_logging, self.validation_logging)
         return pd.DataFrame.from_records(self.training_logging), pd.DataFrame.from_records(self.validation_logging)
 
     def predict(self, X: Union[np.ndarray, T.Tensor, Dataset, DataLoader, TensorDataLoader, List, Tuple],
@@ -427,9 +433,9 @@ class Learner:
         callbacks = _std_callbacks(callbacks)
 
         self.module.to(device)
-        callbacks.on_train_begin(optimizer=self.opt, local_rank=self.__LOCAL_RANK, under_evaluate=True)  # todo: 暂时用`under_evaluate`标记下，以区分是train还是evaluate
+        callbacks.on_fit_begin(optimizer=self.opt, local_rank=self.__LOCAL_RANK, under_evaluate=True)  # todo: 暂时用`under_evaluate`标记下，以区分是train还是evaluate
         _, res = self._walk_through_data(Stage.VALIDATION, dl, 0, 1, metrics, callbacks, device, verbose, require_output)
-        callbacks.on_train_end([], [])
+        callbacks.on_fit_end([], [])
         return res
 
     def save(self, fname):

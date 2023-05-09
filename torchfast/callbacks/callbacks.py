@@ -40,10 +40,22 @@ class BaseCallback:
     def on_epoch_end(self, training_log, validation_log):
         pass
 
-    def on_train_begin(self, **kwargs):
+    def on_fit_begin(self, **kwargs):
         pass
 
-    def on_train_end(self, training_log, validation_log):
+    def on_fit_end(self, training_log, validation_log):
+        pass
+    
+    def on_train_begin(self):
+        pass
+    
+    def on_train_end(self):
+        pass
+
+    def on_val_begin(self):
+        pass
+    
+    def on_val_end(self):
         pass
 
     def on_batch_begin(self, stage, epoch, idx, niter, batch_data, training_log, validation_log):
@@ -78,13 +90,29 @@ class CallbackList(BaseCallback):
         for cbk in self.callbacks:
             cbk.on_epoch_end(training_log, validation_log)
 
-    def on_train_begin(self, **kwargs):
+    def on_fit_begin(self, **kwargs):
         for cbk in self.callbacks:
-            cbk.on_train_begin(**kwargs)
+            cbk.on_fit_begin(**kwargs)
 
-    def on_train_end(self, training_log, validation_log):
+    def on_fit_end(self, training_log, validation_log):
         for cbk in self.callbacks:
-            cbk.on_train_end(training_log, validation_log)
+            cbk.on_fit_end(training_log, validation_log)
+            
+    def on_train_begin(self):
+        for cbk in self.callbacks:
+            cbk.on_train_begin()
+            
+    def on_train_end(self):
+        for cbk in self.callbacks:
+            cbk.on_train_end()
+            
+    def on_val_begin(self):
+        for cbk in self.callbacks:
+            cbk.on_val_begin()
+            
+    def on_val_end(self):
+        for cbk in self.callbacks:
+            cbk.on_val_end()
 
     def on_batch_begin(self, stage, epoch, idx, niter, batch_data, training_log, validation_log):
         for cbk in self.callbacks:
@@ -115,8 +143,8 @@ class ReduceLROnPlateau(BaseCallback):
                  verbose=verbose, threshold=threshold, threshold_mode=threshold_mode,
                  cooldown=cooldown, min_lr=min_lr, eps=eps)
 
-    def on_train_begin(self, **kwargs):
-        super().on_train_begin(**kwargs)
+    def on_fit_begin(self, **kwargs):
+        super().on_fit_begin(**kwargs)
         self.schedule = self.__schdule_fn(kwargs['optimizer'])
 
     def on_epoch_end(self, training_log, validation_log):
@@ -145,8 +173,8 @@ class CosineAnnealingWarmRestarts(BaseCallback):
         self.verbose = verbose
         self.sch = None
 
-    def on_train_begin(self, **kwargs):
-        super().on_train_begin(**kwargs)
+    def on_fit_begin(self, **kwargs):
+        super().on_fit_begin(**kwargs)
         self.sch = lr_scheduler.CosineAnnealingWarmRestarts(kwargs['optimizer'], self.T_0, self.T_mult, self.eta_min, self.last_epoch, self.verbose)
 
     def on_batch_end(self, stage, epoch, idx, niter, metrics, training_log, validation_log):
@@ -164,8 +192,8 @@ class CosineAnnealingLR(BaseCallback):
         self.verbose = verbose
         self.sch = None
 
-    def on_train_begin(self, **kwargs):
-        super().on_train_begin(**kwargs)
+    def on_fit_begin(self, **kwargs):
+        super().on_fit_begin(**kwargs)
         self.sch = lr_scheduler.CosineAnnealingLR(kwargs['optimizer'], self.T_max, self.eta_min, self.last_epoch, self.verbose)
 
     def on_batch_end(self, stage, epoch, idx, niter, metrics, training_log, validation_log):
@@ -229,8 +257,8 @@ class StochasticWeightAveraging(BaseCallback):
             if self.verbose:
                 print(f"Save averaged model to: {p}. last learning rate: {self.swa_sch.get_last_lr()}")
 
-    def on_train_begin(self, **kwargs):
-        super().on_train_begin(**kwargs)
+    def on_fit_begin(self, **kwargs):
+        super().on_fit_begin(**kwargs)
         self.local_rank = kwargs.get('local_rank')
         self.swa_sch = SWALR(kwargs['optimizer'], self.swa_lr, self.anneal_epochs, self.anneal_strategy, self.last_epoch)
         self.swa_model = AveragedModel(self.learner.module, self.device, self.avg_fn)
@@ -242,7 +270,7 @@ class StochasticWeightAveraging(BaseCallback):
             self.swa_sch.step()
             self.async_saver.submit(self._save_checkpoint)
 
-    def on_train_end(self, training_log, validation_log):
+    def on_fit_end(self, training_log, validation_log):
         update_bn(self.learner.train_ld, self.swa_model)
         self.async_saver.shutdown()
 
@@ -285,7 +313,7 @@ class EarlyStopping(BaseCallback):
                 if self.verbose:
                     print("Early stopping")
 
-    def on_train_end(self, training_log, validation_log):
+    def on_fit_end(self, training_log, validation_log):
         self.learner.best_epoch = self.epoch
         if self.restore_best_weights and self.best_model:
             self.learner.module.load_state_dict(self.best_model)
@@ -340,8 +368,8 @@ class ModelCheckpoint(BaseCallback):
         self.learner.save(filepath)
         self.last_save_file = Path(filepath)        
 
-    def on_train_begin(self, **kwargs):
-        super().on_train_begin(**kwargs)
+    def on_fit_begin(self, **kwargs):
+        super().on_fit_begin(**kwargs)
         self.local_rank = kwargs.get('local_rank')
 
     def on_epoch_end(self, training_log, validation_log):
@@ -374,7 +402,7 @@ class ModelCheckpoint(BaseCallback):
                     print(f'Epoch {epoch:05d}: saving model to {filepath}')
                 self.async_saver.submit(self._save, filepath, False)
 
-    def on_train_end(self, training_log, validation_log):
+    def on_fit_end(self, training_log, validation_log):
         self.async_saver.shutdown()
 
 
@@ -406,8 +434,8 @@ class TensorBoard(BaseCallback):
         self.nepoch = 0
         self.remove_existing = remove_existing
 
-    def on_train_begin(self, **kwargs):
-        super().on_train_begin(**kwargs)
+    def on_fit_begin(self, **kwargs):
+        super().on_fit_begin(**kwargs)
         if self.remove_existing:
             shutil.rmtree(self.logdir, ignore_errors=True)
         #Path(self.logdir).mkdir(parents=True, exist_ok=True)
@@ -467,7 +495,7 @@ class TorchProfile(BaseCallback):
         self.with_modules = with_modules
         self.profiler = None
 
-    def on_train_begin(self, **kwargs):
+    def on_fit_begin(self, **kwargs):
         self.profiler = profiler.profile(
             activities=self.activities,
             schedule=self.schedule,
@@ -480,7 +508,7 @@ class TorchProfile(BaseCallback):
         )
         self.profiler.start()
 
-    def on_train_end(self, training_log, validation_log):
+    def on_fit_end(self, training_log, validation_log):
         if self.profiler:
             self.profiler.stop()
 

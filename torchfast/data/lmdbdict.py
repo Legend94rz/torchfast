@@ -2,6 +2,7 @@ from functools import wraps
 from typing import Any, Tuple, List, Iterator, Dict
 import lmdb
 import pickle as pkl
+import sys
 
 
 def _with_transaction(func):
@@ -112,7 +113,11 @@ class LmdbDict:
     @_with_transaction
     def __setitem__(self, k: Any, v: Any, txn=None) -> None:
         assert txn is not None
-        txn.put(pkl.dumps(k), pkl.dumps(v))
+        bv = pkl.dumps(v)
+        try:
+            txn.put(pkl.dumps(k), bv)
+        except Exception as e:
+            print(f"[LMDB WARN] write error: {e}. \n The key is: {k}, The size of val is: {sys.getsizeof(bv)} bytes.")
         
     @_with_transaction
     def __delitem__(self, k: Any, txn=None) -> None:
